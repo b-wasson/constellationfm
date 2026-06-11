@@ -239,10 +239,14 @@ export default function App() {
     return new Map(nodes.map((n) => [n.id, 3 + 13 * Math.sqrt(metric(n) / max)]));
   }, [nodes, degree, settings.sizeMetric]);
 
+  // hovering takes precedence; otherwise a clicked node keeps the
+  // highlight locked on until it's deselected
+  const focusNode = hoverNode || selected;
+
   const highlight = useMemo(() => {
-    if (!hoverNode) return null;
-    return new Set([hoverNode.id, ...(neighbors.get(hoverNode.id) || [])]);
-  }, [hoverNode, neighbors]);
+    if (!focusNode) return null;
+    return new Set([focusNode.id, ...(neighbors.get(focusNode.id) || [])]);
+  }, [focusNode, neighbors]);
 
   // Viewport bounds + zoom captured once per frame; draw callbacks read this
   // to skip everything off-screen instead of painting the whole graph.
@@ -387,8 +391,8 @@ export default function App() {
     (l) => {
       const s = l.source;
       const t = l.target;
-      // always show the hovered artist's connections
-      if (hoverNode && (idOf(s) === hoverNode.id || idOf(t) === hoverNode.id)) {
+      // always show the focused (hovered or selected) artist's connections
+      if (focusNode && (idOf(s) === focusNode.id || idOf(t) === focusNode.id)) {
         return true;
       }
       const f = frameRef.current;
@@ -406,21 +410,21 @@ export default function App() {
       if (f.k < 2 && l._rank > 1500 * Math.max(f.k, 0.25)) return false;
       return true;
     },
-    [hoverNode]
+    [focusNode]
   );
 
   const linkColor = useCallback(
     (l) => {
       if (highlight) {
-        const touchesHover =
-          idOf(l.source) === hoverNode.id || idOf(l.target) === hoverNode.id;
-        return touchesHover ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.02)';
+        const touchesFocus =
+          idOf(l.source) === focusNode.id || idOf(l.target) === focusNode.id;
+        return touchesFocus ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.02)';
       }
       // quantized alpha so the renderer can batch strokes by color
       const a = Math.round((0.06 + 0.24 * Math.min(l.value, 1)) * 20) / 20;
       return `rgba(255,255,255,${a})`;
     },
-    [highlight, hoverNode]
+    [highlight, focusNode]
   );
 
   const linkWidth = useCallback(
@@ -448,7 +452,9 @@ export default function App() {
         linkColor={linkColor}
         linkWidth={linkWidth}
         onNodeHover={setHoverNode}
-        onNodeClick={(node) => setSelected(node)}
+        onNodeClick={(node) =>
+          setSelected((s) => (s?.id === node.id ? null : node))
+        }
         onBackgroundClick={() => setSelected(null)}
         // dragging a node reheats the whole simulation — too heavy on huge graphs
         enableNodeDrag={nodes.length <= 1000}
