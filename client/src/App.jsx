@@ -519,7 +519,12 @@ export default function App() {
           >
             {uiHidden ? 'Show menus' : 'Hide menus'}
           </button>
-          <ShareMenu user={raw.user} />
+          <ShareMenu
+            user={raw.user}
+            fgRef={fgRef}
+            nodes={visibleNodes}
+            radii={radii}
+          />
         </div>
       )}
 
