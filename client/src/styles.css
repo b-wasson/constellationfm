@@ -403,3 +403,7 @@ button[type='submit']:disabled {
   cursor: pointer;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
+
+.toast.warn {
+  background: rgba(180, 100, 8, 0.92);
+}

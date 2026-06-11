@@ -26,6 +26,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [settings, setSettings] = useState({
     sizeMetric: 'userPlaycount',
     linkMetric: 'similarity',
@@ -74,6 +75,7 @@ export default function App() {
     setLoading(true);
     setProgress(null);
     setError(null);
+    setNotice(null);
     setSelected(null);
     setHoverNode(null);
     setGrowing(false);
@@ -87,7 +89,9 @@ export default function App() {
     };
     es.addEventListener('progress', (e) => setProgress(JSON.parse(e.data)));
     es.addEventListener('done', (e) => {
-      setRaw(JSON.parse(e.data));
+      const data = JSON.parse(e.data);
+      setRaw(data);
+      if (data.warning) setNotice(data.warning);
       finish();
     });
     es.addEventListener('failed', (e) => {
@@ -540,6 +544,12 @@ export default function App() {
       {error && (
         <div className="toast" onClick={() => setError(null)}>
           {error}
+        </div>
+      )}
+
+      {notice && !error && (
+        <div className="toast warn" onClick={() => setNotice(null)}>
+          {notice}
         </div>
       )}
     </div>

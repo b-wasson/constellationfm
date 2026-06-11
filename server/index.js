@@ -36,11 +36,55 @@ const artistCache = createCache(24 * 60 * 60 * 1000); // artist info/similar bar
 const graphCache = createCache(10 * 60 * 1000); // user's top artists shift often
 
 // ---------- last.fm helpers ----------
-async function lastfm(params) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// last.fm codes worth retrying: 11 service offline, 16 temporarily
+// unavailable, 29 rate limit exceeded
+const RETRYABLE_CODES = new Set([11, 16, 29]);
+const MAX_RETRIES = 5;
+let throttleUntil = 0; // shared brake: when rate limited, all requests wait
+
+async function lastfm(params, attempt = 0) {
+  const holdoff = throttleUntil - Date.now();
+  if (holdoff > 0) await sleep(holdoff);
+
   const url = new URL(BASE);
   url.search = new URLSearchParams({ ...params, api_key: API_KEY, format: 'json' });
-  const res = await fetch(url);
-  const data = await res.json();
+
+  let status = 0;
+  let data = null;
+  try {
+    const res = await fetch(url);
+    status = res.status;
+    data = await res.json();
+  } catch {
+    data = null; // network/parse hiccup — treat as retryable
+  }
+
+  const rateLimited = status === 429 || data?.error === 29;
+  const retryable = !data || status >= 500 || RETRYABLE_CODES.has(data?.error);
+
+  if (rateLimited || retryable) {
+    if (attempt >= MAX_RETRIES) {
+      const err = new Error(
+        rateLimited
+          ? 'Last.fm is rate limiting us — wait a minute and try again.'
+          : data?.message || 'Last.fm is unavailable right now.'
+      );
+      err.lastfmCode = data?.error;
+      throw err;
+    }
+    const backoff = Math.min(1000 * 2 ** attempt, 15000);
+    if (rateLimited) {
+      // brake every in-flight worker, not just this request
+      throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
+      console.warn(`Last.fm rate limit hit — backing off ${backoff}ms`);
+    } else {
+      await sleep(backoff);
+    }
+    return lastfm(params, attempt + 1);
+  }
+
   if (data.error) {
     const err = new Error(data.message || 'Last.fm error');
     err.lastfmCode = data.error;
@@ -71,6 +115,11 @@ async function getArtistData(name) {
     lastfm({ method: 'artist.getinfo', artist: name, autocorrect: 1 }).catch(() => null),
     lastfm({ method: 'artist.getsimilar', artist: name, autocorrect: 1, limit: 250 }).catch(() => null),
   ]);
+
+  // total failure (rate limiting, most likely) — don't cache the junk result
+  if (!info && !similar) {
+    throw new Error(`Couldn't load data for ${name}`);
+  }
 
   const tagsRaw = info?.artist?.tags?.tag;
   const tags = (Array.isArray(tagsRaw) ? tagsRaw : tagsRaw ? [tagsRaw] : [])
@@ -129,9 +178,16 @@ async function buildGraph({ user, period, limit, wantAll, onProgress = () => {} 
   }
 
   let done = 0;
+  let failedArtists = 0;
   onProgress({ phase: 'details', done, total: artists.length });
   const details = await mapPool(artists, 8, async (a) => {
-    const d = await getArtistData(a.name);
+    let d;
+    try {
+      d = await getArtistData(a.name);
+    } catch {
+      failedArtists++;
+      d = { listeners: 0, globalPlaycount: 0, tags: [], similar: [] };
+    }
     done++;
     onProgress({ phase: 'details', done, total: artists.length });
     return d;
@@ -167,7 +223,15 @@ async function buildGraph({ user, period, limit, wantAll, onProgress = () => {} 
     nodes,
     links: [...linkMap.values()],
   };
-  graphCache.set(cacheKey, payload);
+  if (failedArtists > 0) {
+    payload.warning =
+      `${failedArtists} artist${failedArtists === 1 ? '' : 's'} couldn't be ` +
+      'fully loaded — Last.fm may be rate limiting. Reload in a minute to fill the gaps.';
+  } else {
+    // only cache complete graphs; successful artists are cached individually
+    // anyway, so a reload just retries the failures
+    graphCache.set(cacheKey, payload);
+  }
   return payload;
 }
 
