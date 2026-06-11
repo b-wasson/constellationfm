@@ -17,6 +17,15 @@ const lf = createLastfm(() => API_KEY);
 
 const app = express();
 
+const sendError = (res, err) => {
+  const status = statusOf(err);
+  // tell the client how long to hold off so it doesn't make things worse
+  if (status === 429 && err.retryAfterSec) {
+    res.set('Retry-After', String(err.retryAfterSec));
+  }
+  res.status(status).json({ error: err.message });
+};
+
 // The client orchestrates graph building itself (paging, concurrency,
 // retries, link assembly) so the same thin proxy works here and on
 // Cloudflare Workers, where one request may only make a few subrequests.
@@ -33,7 +42,7 @@ app.get('/api/top-artists', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=600');
     res.json(data);
   } catch (err) {
-    res.status(statusOf(err)).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -46,7 +55,7 @@ app.get('/api/artist-data', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=86400');
     res.json(data);
   } catch (err) {
-    res.status(statusOf(err)).json({ error: err.message });
+    sendError(res, err);
   }
 });
 

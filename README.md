@@ -213,13 +213,17 @@ lastfm-graph/
 
 - **API key stays server-side.** The browser never talks to Last.fm
   directly, so your key isn't exposed — but it also means all traffic shares
-  one key. Last.fm allows roughly 5 requests/second, so many *simultaneous*
-  first-time loads will queue. The artist cache absorbs most of this in
-  practice.
-- **First loads are the slow part.** A 50-artist graph takes a few seconds;
-  an entire large library can take several minutes (about 2 Last.fm calls
-  per artist). The progress bar keeps you posted, and repeat loads hit the
-  cache.
+  one key. Last.fm allows roughly 5 requests/second and suspends keys that
+  keep exceeding it, so the proxy deliberately paces all outgoing Last.fm
+  calls to stay under that, and backs off hard (escalating up to a minute,
+  honoring `Retry-After`) if a rate limit ever does hit. Many *simultaneous*
+  first-time loads therefore queue; the artist cache absorbs most of this
+  in practice.
+- **First loads are the slow part.** With pacing, the app works through
+  about 2–3 artists per second on uncached data — a 50-artist graph takes
+  ~20 seconds, an entire large library can take a while (about 2 Last.fm
+  calls per artist). The progress bar keeps you posted, and repeat loads
+  hit the caches and are near-instant.
 - **"Unknown" genre** means Last.fm has no usable tags for that artist —
   common for small or obscure artists.
 - **WSL2 tip:** if the project lives on the Windows drive (`/mnt/c/…`), file

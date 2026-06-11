@@ -7,6 +7,9 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const MAX_RETRIES = 5;
+// when rate limited, cool down hard and escalate — hammering a limited API
+// is how keys get banned
+const RATE_LIMIT_COOLDOWNS_MS = [5000, 10000, 20000, 40000, 60000];
 let throttleUntil = 0; // shared brake across all in-flight requests
 
 async function api(path, attempt = 0) {
@@ -23,8 +26,14 @@ async function api(path, attempt = 0) {
 
   const retryable = !res || res.status === 429 || res.status >= 500;
   if (retryable && attempt < MAX_RETRIES) {
-    const backoff = Math.min(1000 * 2 ** attempt, 15000);
+    let backoff = Math.min(1000 * 2 ** attempt, 15000);
     if (res?.status === 429) {
+      // honor the server's Retry-After, never wait less than the schedule,
+      // and brake every in-flight request, not just this one
+      const retryAfter = (Number(res.headers.get('retry-after')) || 0) * 1000;
+      const cooldown =
+        RATE_LIMIT_COOLDOWNS_MS[Math.min(attempt, RATE_LIMIT_COOLDOWNS_MS.length - 1)];
+      backoff = Math.max(backoff, cooldown, retryAfter);
       throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
     }
     await sleep(backoff);

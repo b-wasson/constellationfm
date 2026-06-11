@@ -29,23 +29,45 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRYABLE_CODES = new Set([11, 16, 29]);
 const MAX_RETRIES = 5;
 
+// Last.fm allows roughly 5 requests/second; keys that keep exceeding it get
+// suspended. Space outgoing calls to stay under that instead of finding out.
+const MIN_INTERVAL_MS = 210; // ~4.7 req/s
+
+// once actually rate limited, cool down hard and escalate — being slow is
+// recoverable, a banned key is not
+const RATE_LIMIT_COOLDOWNS_MS = [5000, 10000, 20000, 40000, 60000];
+
 export function createLastfm(getKey) {
   const artistCache = createCache(24 * 60 * 60 * 1000); // info/similar barely changes
   const topCache = createCache(10 * 60 * 1000); // top artists shift often
   let throttleUntil = 0; // shared brake: when rate limited, all requests wait
+  let nextSlot = 0; // outgoing-call pacing: next moment a request may leave
+
+  // Wait until both the rate-limit brake has lifted and our pacing slot is
+  // free, then claim the next slot. Serializes all Last.fm traffic to
+  // ~MIN_INTERVAL_MS apart no matter how many callers run concurrently.
+  async function pace() {
+    for (;;) {
+      const wait = Math.max(throttleUntil, nextSlot) - Date.now();
+      if (wait <= 0) break;
+      await sleep(wait);
+    }
+    nextSlot = Math.max(Date.now(), nextSlot) + MIN_INTERVAL_MS;
+  }
 
   async function lastfm(params, attempt = 0) {
-    const holdoff = throttleUntil - Date.now();
-    if (holdoff > 0) await sleep(holdoff);
+    await pace();
 
     const url = new URL(BASE);
     url.search = new URLSearchParams({ ...params, api_key: getKey(), format: 'json' });
 
     let status = 0;
     let data = null;
+    let retryAfterSec = 0;
     try {
       const res = await fetch(url);
       status = res.status;
+      retryAfterSec = Number(res.headers.get('retry-after')) || 0;
       data = await res.json();
     } catch {
       data = null; // network/parse hiccup — treat as retryable
@@ -63,11 +85,22 @@ export function createLastfm(getKey) {
         );
         err.lastfmCode = data?.error;
         err.rateLimited = rateLimited;
+        if (rateLimited) {
+          err.retryAfterSec = Math.max(
+            30,
+            retryAfterSec,
+            Math.ceil((throttleUntil - Date.now()) / 1000)
+          );
+        }
         throw err;
       }
-      const backoff = Math.min(1000 * 2 ** attempt, 15000);
+      let backoff = Math.min(1000 * 2 ** attempt, 15000);
       if (rateLimited) {
-        // brake every in-flight request, not just this one
+        // honor Retry-After when Last.fm sends one, never cool down less
+        // than the escalating schedule, and brake every in-flight request
+        const cooldown =
+          RATE_LIMIT_COOLDOWNS_MS[Math.min(attempt, RATE_LIMIT_COOLDOWNS_MS.length - 1)];
+        backoff = Math.max(backoff, cooldown, retryAfterSec * 1000);
         throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
       }
       await sleep(backoff);
@@ -118,6 +151,7 @@ export function createLastfm(getKey) {
     if (!info && !similar) {
       const err = new Error(`Couldn't load data for ${name}`);
       err.rateLimited = true;
+      err.retryAfterSec = Math.max(30, Math.ceil((throttleUntil - Date.now()) / 1000));
       throw err;
     }
 

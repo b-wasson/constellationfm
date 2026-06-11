@@ -6,14 +6,23 @@ import { createLastfm, statusOf } from '../shared/lastfm.js';
 
 let lf; // per-isolate; the in-memory caches in here are best-effort L1
 
-const json = (data, status = 200, cacheControl = 'no-store') =>
+const json = (data, status = 200, cacheControl = 'no-store', extraHeaders = {}) =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json',
       'cache-control': cacheControl,
+      ...extraHeaders,
     },
   });
+
+// tell the client how long to hold off so it doesn't make things worse
+const errorResponse = (err) => {
+  const status = statusOf(err);
+  const headers =
+    status === 429 && err.retryAfterSec ? { 'retry-after': String(err.retryAfterSec) } : {};
+  return json({ error: err.message }, status, 'no-store', headers);
+};
 
 // Serve from / store into Cloudflare's edge cache. Only successful responses
 // carry a max-age, so failures are never cached. (On *.workers.dev domains
@@ -49,7 +58,7 @@ export default {
         try {
           return json(await lf.getTopArtists({ user, period, limit, page }), 200, cc);
         } catch (err) {
-          return json({ error: err.message }, statusOf(err));
+          return errorResponse(err);
         }
       });
     }
@@ -62,7 +71,7 @@ export default {
         try {
           return json(await lf.getArtistData(name), 200, cc);
         } catch (err) {
-          return json({ error: err.message }, statusOf(err));
+          return errorResponse(err);
         }
       });
     }
