@@ -46,6 +46,10 @@ linked to the artists Last.fm considers similar, and colored by genre.
   download it, copy it to the clipboard, send it through your device's share
   sheet, or open a pre-written post on X, Bluesky, Reddit, or Facebook to
   attach it to.
+- **Export a looping GIF** of the grow animation: the graph spins exactly
+  360° while connections sprout and recede back to the start, so the GIF
+  loops seamlessly. Rendered offline from a frozen layout — the live view
+  keeps its positions.
 
 ### Data controls
 

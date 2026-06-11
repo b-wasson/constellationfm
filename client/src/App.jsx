@@ -524,6 +524,8 @@ export default function App() {
             fgRef={fgRef}
             nodes={visibleNodes}
             radii={radii}
+            raw={raw}
+            settings={settings}
           />
         </div>
       )}

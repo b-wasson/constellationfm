@@ -351,6 +351,11 @@ button[type='submit']:disabled {
   color: #fff;
 }
 
+.share-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .share-sep {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
