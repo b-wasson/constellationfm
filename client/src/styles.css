@@ -20,8 +20,10 @@ body {
   position: fixed;
   width: 270px;
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   background: rgba(18, 18, 26, 0.88);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
@@ -43,6 +45,7 @@ body {
   gap: 12px;
   width: 270px;
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
 }
 
 .left-column .panel {
@@ -255,13 +258,14 @@ button[type='submit']:disabled {
 .legend {
   position: fixed;
   left: 16px;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
   max-width: 420px;
   padding: 10px 14px;
   background: rgba(18, 18, 26, 0.8);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -291,7 +295,7 @@ button[type='submit']:disabled {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   display: flex;
   gap: 8px;
 }
@@ -302,6 +306,7 @@ button[type='submit']:disabled {
   font-weight: 600;
   color: #9ca3af;
   background: rgba(18, 18, 26, 0.8);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
@@ -327,6 +332,7 @@ button[type='submit']:disabled {
   width: 200px;
   padding: 6px;
   background: rgba(18, 18, 26, 0.95);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -474,7 +480,7 @@ button[type='submit']:disabled {
 
 .toast {
   position: fixed;
-  bottom: 64px;
+  bottom: calc(64px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   padding: 10px 18px;
@@ -488,4 +494,78 @@ button[type='submit']:disabled {
 
 .toast.warn {
   background: rgba(180, 100, 8, 0.92);
+}
+
+/* ---------- mobile ---------- */
+@media (max-width: 640px) {
+  /* 16px stops iOS Safari from zooming the page into focused fields */
+  input[type='text'],
+  select {
+    font-size: 16px;
+  }
+
+  /* backdrop blur over an animating canvas re-blurs every frame — too
+     expensive for phone GPUs, so trade the frosted glass for near-opaque */
+  .panel,
+  .ui-toggle,
+  .share-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(14, 14, 20, 0.96);
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  /* controls become a full-width top sheet */
+  .controls {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 46vh;
+    max-height: 46dvh;
+  }
+
+  /* search + details become a bottom sheet above the button bar */
+  .left-column {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: 34vh;
+    max-height: 34dvh;
+    overflow-y: auto;
+  }
+
+  .legend {
+    display: none; /* too little room; genre colors still show on the nodes */
+  }
+
+  /* roomier tap targets */
+  button[type='submit'] {
+    padding: 11px;
+  }
+
+  .toggle-btn {
+    padding: 10px;
+  }
+
+  .ui-toggle {
+    padding: 10px 16px;
+  }
+
+  .start-title {
+    font-size: 34px;
+  }
+
+  .start-card {
+    width: min(320px, calc(100vw - 32px));
+  }
+
+  .toast {
+    max-width: calc(100vw - 24px);
+  }
 }

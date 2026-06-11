@@ -41,7 +41,8 @@ export default function App() {
   const [hoverNode, setHoverNode] = useState(null);
   const [selected, setSelected] = useState(null);
   const [growing, setGrowing] = useState(false);
-  const [uiHidden, setUiHidden] = useState(false);
+  // phones: start with the panels tucked away so the graph gets the screen
+  const [uiHidden, setUiHidden] = useState(() => window.innerWidth < 640);
 
   // "Grow" mode: glide the active link threshold down and back up in fine
   // 0.01 steps, so connections sprout and recede fluidly. Starts from the

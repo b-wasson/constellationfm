@@ -416,12 +416,22 @@ export default function ShareMenu({
   };
 
   const handleCopy = async () => {
+    // Safari only honors clipboard writes inside the click gesture, so the
+    // ClipboardItem gets a promise instead of awaiting the capture first
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+      try {
+        const item = new ClipboardItem({
+          'image/png': snap().then((b) => b || new Blob([], { type: 'image/png' })),
+        });
+        await navigator.clipboard.write([item]);
+        flash('Copied to clipboard!');
+        return;
+      } catch {
+        // fall through to download
+      }
+    }
     const blob = await snap();
-    if (!blob) return;
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      flash('Copied to clipboard!');
-    } catch {
+    if (blob) {
       download(blob);
       flash('Copying not supported here — saved instead.');
     }
