@@ -1,6 +1,7 @@
 {
   "name": "lastfm-graph",
   "private": true,
+  "type": "module",
   "workspaces": [
     "client",
     "server"
@@ -8,7 +9,9 @@
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
-    "start": "npm start -w server"
+    "start": "npm start -w server",
+    "cf:dev": "npm run build && npx wrangler dev",
+    "cf:deploy": "npm run build && npx wrangler deploy"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

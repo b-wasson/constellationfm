@@ -1,0 +1,2 @@
+# copy to .dev.vars for `wrangler dev` (never commit .dev.vars)
+LASTFM_API_KEY=your_api_key_here

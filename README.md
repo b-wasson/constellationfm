@@ -58,9 +58,9 @@ linked to the artists Last.fm considers similar, and colored by genre.
 - **Time period**: last 7 days, 1/3/6/12 months, or all time.
 - **Artist count**: 20 up to your entire library ("All"). Counts above 200
   show a heads-up that the first load takes a while.
-- **Live progress bar** while loading — the app streams progress from the
-  server so you can watch it page through your library and fetch artist
-  details in real time.
+- **Live progress bar** while loading — the app pages through your library
+  and fetches artist details right from the browser, so you can watch it
+  work in real time.
 
 ### Performance
 
@@ -114,56 +114,99 @@ Open <http://localhost:5173>, enter a Last.fm username, and hit **Build
 graph**. The Vite dev server (port 5173) proxies `/api` requests to the
 Express server (port 3001).
 
-### Production
+### Production (self-hosted)
 
 ```bash
 npm run build   # bundles the client into client/dist
 npm start       # Express serves both the API and the built client on :3001
 ```
 
+### Deploying to Cloudflare
+
+The app ships with a Cloudflare Worker (`worker/index.js`) that serves the
+built client as static assets and proxies the same two API endpoints as the
+Express server, with Last.fm responses cached at the edge.
+
+```bash
+npx wrangler login                      # once: connect your Cloudflare account
+npx wrangler secret put LASTFM_API_KEY  # once: store your API key
+npm run cf:deploy                       # build + deploy
+```
+
+That's it — Wrangler prints your `*.workers.dev` URL. To preview locally
+first, copy `.dev.vars.example` to `.dev.vars`, fill in your key, and run
+`npm run cf:dev`.
+
+Notes:
+
+- On a free Workers plan everything works; attaching a **custom domain**
+  additionally enables Cloudflare's edge cache for Last.fm responses
+  (the Cache API is a no-op on `*.workers.dev`).
+- The architecture was shaped around Workers' subrequest limits: the browser
+  orchestrates graph building and each Worker invocation makes at most a
+  couple of Last.fm calls, so even "All artists" loads work on the free plan.
+- A very large library means thousands of Worker requests per first load —
+  fine for personal use, but keep the free plan's daily request quota in
+  mind if you share the link widely.
+
 ## How it works
 
 ```
-┌──────────────┐     /api/graph?user=…&stream=1      ┌──────────────┐
-│ React client │ ──────────────────────────────────► │ Express API  │
-│ force-graph  │ ◄────────── SSE progress ────────── │  + caching   │
-└──────────────┘            then full graph          └──────┬───────┘
-                                                            │ user.gettopartists
-                                                            │ artist.getinfo
-                                                            │ artist.getsimilar
-                                                            ▼
-                                                      Last.fm API
+┌──────────────┐   /api/top-artists?user=…&page=…   ┌────────────────────┐
+│ React client │ ─────────────────────────────────► │ Thin API proxy     │
+│ force-graph  │   /api/artist-data?name=…          │ Express or         │
+│ + graph      │ ◄───────────────────────────────── │ Cloudflare Worker  │
+│   builder    │        cached JSON responses       │ (key + caching)    │
+└──────────────┘                                    └─────────┬──────────┘
+                                                              │ user.gettopartists
+                                                              │ artist.getinfo
+                                                              │ artist.getsimilar
+                                                              ▼
+                                                        Last.fm API
 ```
 
-1. The server fetches the user's top artists for the chosen period
-   (paginating 1,000 at a time for "All").
-2. For each artist it fetches `artist.getinfo` (global stats + genre tags)
-   and `artist.getsimilar` (similarity scores), 8 requests in parallel,
-   streaming progress back to the client as Server-Sent Events.
-3. Links are built between every pair of artists that are both in your
-   library and appear in each other's similar-artists lists.
-4. The client renders the graph with
+1. The browser pages through the user's top artists for the chosen period
+   (1,000 at a time for "All").
+2. For each artist it fetches global stats + genre tags and similarity
+   scores through the proxy, 8 requests in parallel, with retry/backoff
+   when Last.fm rate limits. The proxy holds the API key and caches
+   responses (24 h per artist, 10 min per top-artists page).
+3. The client builds links between every pair of artists that are both in
+   your library and appear in each other's similar-artists lists.
+4. The graph renders with
    [force-graph](https://github.com/vasturiano/force-graph) (canvas) and
-   computes everything display-related — link filtering, shared-tag links,
-   node sizing, genre coloring — locally. Changing display settings never
-   refetches data or resets the layout.
+   everything display-related — link filtering, shared-tag links, node
+   sizing, genre coloring — is computed locally. Changing display settings
+   never refetches data or resets the layout.
+
+The same orchestration runs against either backend, so local dev (Express)
+and production (Cloudflare Worker) behave identically — and because each
+proxy request triggers at most a couple of Last.fm calls, the design fits
+inside Cloudflare Workers' per-request subrequest limits.
 
 ### Project layout
 
 ```
 lastfm-graph/
-├── server/            # Express API
-│   ├── index.js       # /api/graph endpoint, Last.fm client, TTL caches, SSE
+├── shared/
+│   └── lastfm.js      # Last.fm client: retries, backoff, TTL caches
+├── server/            # Express proxy (local dev / self-hosting)
+│   ├── index.js       # /api/top-artists, /api/artist-data
 │   └── .env           # LASTFM_API_KEY (not committed)
+├── worker/
+│   └── index.js       # Cloudflare Worker: same endpoints + edge cache
+├── wrangler.jsonc     # Cloudflare config (assets + worker)
 ├── client/            # Vite + React frontend
 │   └── src/
 │       ├── App.jsx               # graph rendering, LOD, culling, state
+│       ├── lib/loadGraph.js      # client-side graph orchestration
 │       ├── colors.js             # genre → color mapping
 │       └── components/
 │           ├── Controls.jsx      # username, sliders, dropdowns, search
 │           ├── DetailsPanel.jsx  # artist info on click
+│           ├── ShareMenu.jsx     # screenshots + looping GIF export
 │           └── Legend.jsx        # genre color legend
-└── package.json       # npm workspaces + dev/build/start scripts
+└── package.json       # npm workspaces + dev/build/deploy scripts
 ```
 
 ## Notes & limitations
@@ -186,10 +229,10 @@ lastfm-graph/
 
 ## Tech stack
 
-| Layer     | Choice                                          |
-| --------- | ----------------------------------------------- |
-| Frontend  | React 18 + Vite                                 |
-| Graph     | force-graph / react-force-graph-2d (canvas)     |
-| Backend   | Node.js + Express                               |
-| Data      | Last.fm API (top artists, artist info, similar) |
-| Streaming | Server-Sent Events for load progress            |
+| Layer    | Choice                                            |
+| -------- | ------------------------------------------------- |
+| Frontend | React 18 + Vite                                   |
+| Graph    | force-graph / react-force-graph-2d (canvas)       |
+| Backend  | Express (dev/self-host) or Cloudflare Worker      |
+| Data     | Last.fm API (top artists, artist info, similar)   |
+| Hosting  | Cloudflare Workers + static assets (`cf:deploy`)  |

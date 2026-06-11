@@ -8,6 +8,7 @@ import ShareMenu from './components/ShareMenu';
 import DetailsPanel from './components/DetailsPanel';
 import Legend from './components/Legend';
 import { genreOf } from './colors';
+import { loadGraph } from './lib/loadGraph';
 
 const idOf = (end) => (typeof end === 'object' ? end.id : end);
 
@@ -76,7 +77,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [growing, raw]);
 
-  const load = useCallback((username, period, limit) => {
+  const load = useCallback(async (username, period, limit) => {
     setLoading(true);
     setProgress(null);
     setError(null);
@@ -85,28 +86,16 @@ export default function App() {
     setHoverNode(null);
     setGrowing(false);
 
-    const params = new URLSearchParams({ user: username, period, limit, stream: '1' });
-    const es = new EventSource(`/api/graph?${params}`);
-    const finish = () => {
-      es.close();
+    try {
+      const payload = await loadGraph({ username, period, limit }, setProgress);
+      setRaw(payload);
+      if (payload.warning) setNotice(payload.warning);
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setLoading(false);
       setProgress(null);
-    };
-    es.addEventListener('progress', (e) => setProgress(JSON.parse(e.data)));
-    es.addEventListener('done', (e) => {
-      const data = JSON.parse(e.data);
-      setRaw(data);
-      if (data.warning) setNotice(data.warning);
-      finish();
-    });
-    es.addEventListener('failed', (e) => {
-      setError(JSON.parse(e.data).error);
-      finish();
-    });
-    es.onerror = () => {
-      setError('Lost connection to the server.');
-      finish();
-    };
+    }
   }, []);
 
   const submitLoad = useCallback(() => {
