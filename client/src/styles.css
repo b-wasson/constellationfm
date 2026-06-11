@@ -286,12 +286,17 @@ button[type='submit']:disabled {
   color: #6b7280;
 }
 
-/* ---------- ui toggle ---------- */
-.ui-toggle {
+/* ---------- bottom bar (hide menus + share) ---------- */
+.bottom-bar {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+.ui-toggle {
   padding: 7px 14px;
   font-size: 12px;
   font-weight: 600;
@@ -307,6 +312,72 @@ button[type='submit']:disabled {
 .ui-toggle:hover {
   color: #e5e7eb;
   border-color: rgba(167, 139, 250, 0.5);
+}
+
+/* ---------- share menu ---------- */
+.share-wrap {
+  position: relative;
+}
+
+.share-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  padding: 6px;
+  background: rgba(18, 18, 26, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.share-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: left;
+  color: #e5e7eb;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.share-menu button:hover {
+  background: rgba(167, 139, 250, 0.15);
+  color: #fff;
+}
+
+.share-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 5px 8px;
+}
+
+.share-note {
+  margin: 5px 8px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.share-status {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: #0a0a0f;
+  font-weight: 600;
+  background: #a78bfa;
+  border-radius: 999px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
 }
 
 /* ---------- states ---------- */

@@ -4,6 +4,7 @@ import Controls from './components/Controls';
 import StartScreen from './components/StartScreen';
 import { MAX_LIMIT } from './components/GraphForm';
 import SearchPanel from './components/SearchPanel';
+import ShareMenu from './components/ShareMenu';
 import DetailsPanel from './components/DetailsPanel';
 import Legend from './components/Legend';
 import { genreOf } from './colors';
@@ -510,13 +511,16 @@ export default function App() {
       )}
 
       {raw && (
-        <button
-          type="button"
-          className="ui-toggle"
-          onClick={() => setUiHidden((h) => !h)}
-        >
-          {uiHidden ? 'Show menus' : 'Hide menus'}
-        </button>
+        <div className="bottom-bar">
+          <button
+            type="button"
+            className="ui-toggle"
+            onClick={() => setUiHidden((h) => !h)}
+          >
+            {uiHidden ? 'Show menus' : 'Hide menus'}
+          </button>
+          <ShareMenu user={raw.user} />
+        </div>
       )}
 
       {!raw && !loading && (

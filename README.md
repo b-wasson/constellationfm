@@ -41,6 +41,11 @@ linked to the artists Last.fm considers similar, and colored by genre.
   place).
 - **Drag, pan, and zoom** freely. Dragging is disabled above 1,000 artists,
   where it would bog down the physics.
+- **Share your graph** as an image: the Share button screenshots the current
+  view (stamped with your username and Constellation.fm), then lets you
+  download it, copy it to the clipboard, send it through your device's share
+  sheet, or open a pre-written post on X, Bluesky, Reddit, or Facebook to
+  attach it to.
 
 ### Data controls
 
