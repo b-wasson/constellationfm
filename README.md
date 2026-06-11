@@ -1,4 +1,4 @@
-# last.fm graph
+# Constellation.fm
 
 An Obsidian-graph-view-style map of your Last.fm listening history. Type a
 username and your library becomes an interactive force-directed universe:

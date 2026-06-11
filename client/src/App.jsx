@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import Controls from './components/Controls';
+import StartScreen from './components/StartScreen';
+import { MAX_LIMIT } from './components/GraphForm';
 import SearchPanel from './components/SearchPanel';
 import DetailsPanel from './components/DetailsPanel';
 import Legend from './components/Legend';
@@ -23,6 +25,7 @@ export default function App() {
   const { w, h } = useWindowSize();
 
   const [raw, setRaw] = useState(null);
+  const [form, setForm] = useState({ username: '', period: 'overall', limit: 50 });
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
@@ -103,6 +106,11 @@ export default function App() {
       finish();
     };
   }, []);
+
+  const submitLoad = useCallback(() => {
+    const limit = form.limit === MAX_LIMIT ? 'all' : form.limit;
+    load(form.username.trim(), form.period, limit);
+  }, [form, load]);
 
   // Nodes only depend on the fetched data so the force layout
   // survives display-setting changes without resetting positions.
@@ -469,26 +477,25 @@ export default function App() {
         d3AlphaMin={big ? 0.01 : 0}
       />
 
-      {!uiHidden && (
+      {raw && !uiHidden && (
         <>
           <Controls
             settings={settings}
             onSettingsChange={setSettings}
-            onLoad={load}
+            form={form}
+            onFormChange={setForm}
+            onSubmit={submitLoad}
             loading={loading}
-            hasData={!!raw}
-            user={raw?.user}
+            user={raw.user}
             growing={growing}
             onToggleGrow={setGrowing}
           />
 
           <div className="left-column">
-            {raw && (
-              <SearchPanel
-                artistNames={visibleNodes.map((n) => n.id)}
-                onSearch={focusArtist}
-              />
-            )}
+            <SearchPanel
+              artistNames={visibleNodes.map((n) => n.id)}
+              onSearch={focusArtist}
+            />
             {selected && (
               <DetailsPanel
                 node={selected}
@@ -498,23 +505,27 @@ export default function App() {
             )}
           </div>
 
-          {raw && <Legend nodes={visibleNodes} />}
+          <Legend nodes={visibleNodes} />
         </>
       )}
 
-      <button
-        type="button"
-        className="ui-toggle"
-        onClick={() => setUiHidden((h) => !h)}
-      >
-        {uiHidden ? 'Show menus' : 'Hide menus'}
-      </button>
+      {raw && (
+        <button
+          type="button"
+          className="ui-toggle"
+          onClick={() => setUiHidden((h) => !h)}
+        >
+          {uiHidden ? 'Show menus' : 'Hide menus'}
+        </button>
+      )}
 
       {!raw && !loading && (
-        <div className="empty-state">
-          <h1>last.fm graph</h1>
-          <p>Enter your Last.fm username in the panel to map your listening universe.</p>
-        </div>
+        <StartScreen
+          form={form}
+          onChange={setForm}
+          onSubmit={submitLoad}
+          loading={loading}
+        />
       )}
 
       {loading && (
