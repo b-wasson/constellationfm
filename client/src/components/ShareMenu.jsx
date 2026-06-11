@@ -3,12 +3,14 @@ import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 const MAX_LABELS = 12;
 
-// GIF export: one full 360° rotation + one full threshold down-and-back
-// sweep over the same duration, so the last frame flows into the first.
-const GIF_FRAMES = 72;
-const GIF_DELAY = 70; // ms per frame (~5s loop)
+// GIF export: record the real, live simulation through one full grow cycle —
+// a 360° rotation plus a threshold down-and-back sweep. Physics drift means
+// the end never matches the start exactly, so a few extra frames are
+// recorded past the loop point and crossfaded over the opening frames.
+const GIF_FRAMES = 70; // one full loop
+const GIF_OVERLAP = 10; // extra frames blended into the start to hide the seam
+const GIF_DELAY = 100; // ms per frame (10 fps, ~7s loop)
 const GIF_WIDTH = 720;
-const GIF_MAX_LINKS = 8000; // strongest links only, so huge graphs stay fast
 
 // Label the most prominent artists in view so the screenshot has substance
 // even when zoomed out (where the live render hides every name).
@@ -159,13 +161,57 @@ function captureGraph({ user, fg, nodes, radii }) {
 }
 
 const tick = () => new Promise((r) => setTimeout(r));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Render the grow animation offline into a perfectly looping GIF. Recording
-// the live simulation can't loop (physics drift never returns nodes to their
-// start positions), so this freezes the layout and synthesizes one cycle:
-// the link threshold sweeps down and back up (a triangle wave that ends
-// where it started) while the whole graph turns exactly 360°.
-async function renderGrowGif({ fg, nodes, radii, raw, settings, user, onProgress }) {
+// One rigid rotation step around the centroid — the same spin grow mode does,
+// applied to positions and velocities so the live physics keeps making sense.
+function rotateNodes(nodes, dTheta) {
+  let cx = 0;
+  let cy = 0;
+  let count = 0;
+  for (const n of nodes) {
+    if (n.x != null) {
+      cx += n.x;
+      cy += n.y;
+      count++;
+    }
+  }
+  if (count === 0) return;
+  cx /= count;
+  cy /= count;
+  const cos = Math.cos(dTheta);
+  const sin = Math.sin(dTheta);
+  for (const n of nodes) {
+    if (n.x == null) continue;
+    const dx = n.x - cx;
+    const dy = n.y - cy;
+    n.x = cx + dx * cos - dy * sin;
+    n.y = cy + dx * sin + dy * cos;
+    if (n.vx != null) {
+      const { vx, vy } = n;
+      n.vx = vx * cos - vy * sin;
+      n.vy = vx * sin + vy * cos;
+    }
+  }
+}
+
+// Record the real, live grow animation. The export drives one full cycle —
+// threshold sweeping down and back up while the graph turns exactly 360° —
+// and grabs frames straight off the app canvas, so the d3 physics (links
+// pulling clusters together, drift, settling) is all genuinely in the GIF.
+// Threshold and rotation return to their start values; the leftover physics
+// drift is hidden by recording GIF_OVERLAP extra frames and crossfading them
+// over the opening frames, so the loop ghost-morphs instead of jumping.
+async function recordGrowGif({
+  fg,
+  nodes,
+  radii,
+  settings,
+  onSettingsChange,
+  onToggleGrow,
+  user,
+  onProgress,
+}) {
   const src = document.querySelector('.app canvas');
   if (!src || !fg || nodes.length === 0) return null;
 
@@ -174,76 +220,34 @@ async function renderGrowGif({ fg, nodes, radii, raw, settings, user, onProgress
   const outW = Math.min(GIF_WIDTH, vw);
   const outScale = outW / vw;
   const outH = Math.round(vh * outScale);
-  const k = fg.zoom();
 
-  // freeze positions so the live simulation can't smear the loop
-  const pos = new Map();
-  for (const n of nodes) if (n.x != null) pos.set(n.id, { x: n.x, y: n.y });
-  if (pos.size === 0) return null;
-  let cx = 0;
-  let cy = 0;
-  for (const p of pos.values()) {
-    cx += p.x;
-    cy += p.y;
-  }
-  cx /= pos.size;
-  cy /= pos.size;
+  onToggleGrow(false); // the recorder drives the cycle itself
 
-  // candidate links + the threshold range the sweep will cover
-  let candidates;
-  let lo;
-  let hi;
-  let normOf;
-  if (settings.linkMetric === 'similarity') {
-    candidates = raw.links.filter((l) => pos.has(l.source) && pos.has(l.target));
-    lo = 0;
-    hi = Math.max(settings.simThreshold, 0.35); // always sweep enough to be visible
-    normOf = (v) => Math.min(v, 1);
-  } else {
-    onProgress?.('Computing shared-tag links…');
-    await tick();
-    candidates = [];
-    for (let i = 0; i < raw.nodes.length; i++) {
-      if (!pos.has(raw.nodes[i].id)) continue;
-      const tagsA = new Set(raw.nodes[i].tags);
-      for (let j = i + 1; j < raw.nodes.length; j++) {
-        if (!pos.has(raw.nodes[j].id)) continue;
-        let shared = 0;
-        for (const t of raw.nodes[j].tags) if (tagsA.has(t)) shared++;
-        if (shared >= 1) {
-          candidates.push({ source: raw.nodes[i].id, target: raw.nodes[j].id, value: shared });
-        }
-      }
-    }
-    lo = 1;
-    hi = 4;
-    normOf = (v) => Math.min(v / 4, 1);
-  }
-  candidates.sort((a, b) => b.value - a.value);
+  const isSim = settings.linkMetric === 'similarity';
+  const hi = isSim ? Math.max(settings.simThreshold, 0.35) : 4; // enough range to be visible
+  const lo = isSim ? 0 : 1;
+  const startVal = isSim ? settings.simThreshold : settings.minSharedTags;
 
   const canvas = document.createElement('canvas');
   canvas.width = outW;
   canvas.height = outH;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  const screenAt = (p, cos, sin) => {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const g = fg.graph2ScreenCoords(cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+  const screenOf = (n) => {
+    const g = fg.graph2ScreenCoords(n.x, n.y);
     return { x: g.x * outScale, y: g.y * outScale };
   };
 
-  // pick the labeled artists once, from the unrotated frame, so the same
-  // names ride along for the whole loop instead of flickering in and out
+  // pick the labeled artists once up front; their labels follow the live
+  // node positions each frame instead of flickering in and out
   const labelFont = '600 12px Inter, system-ui, sans-serif';
   ctx.font = labelFont;
   const labelCands = [];
   for (const n of nodes) {
-    const p = pos.get(n.id);
-    if (!p) continue;
-    const s = screenAt(p, 1, 0);
+    if (n.x == null) continue;
+    const s = screenOf(n);
     if (s.x < 0 || s.x > outW || s.y < 0 || s.y > outH) continue;
-    labelCands.push({ id: n.id, x: s.x, y: s.y, r: (radii.get(n.id) || 4) * k * outScale });
+    labelCands.push({ id: n.id, x: s.x, y: s.y, r: (radii.get(n.id) || 4) * fg.zoom() * outScale });
   }
   labelCands.sort((a, b) => b.r - a.r);
   const labelIds = new Set();
@@ -262,61 +266,38 @@ async function renderGrowGif({ fg, nodes, radii, raw, settings, user, onProgress
     labelIds.add(c.id);
   }
 
-  const gif = GIFEncoder();
-  for (let f = 0; f < GIF_FRAMES; f++) {
-    const t = f / GIF_FRAMES;
-    const theta = 2 * Math.PI * t;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    // triangle wave: hi → lo → hi, back at the start value on the last step
-    let threshold = lo + (hi - lo) * Math.abs(1 - 2 * t);
-    if (settings.linkMetric === 'tags') threshold = Math.round(threshold);
+  // --- record: drive the animation for real and capture each frame ---
+  const total = GIF_FRAMES + GIF_OVERLAP;
+  const dTheta = (2 * Math.PI) / GIF_FRAMES;
+  const frames = [];
+  for (let f = 0; f < total; f++) {
+    const t = (f % GIF_FRAMES) / GIF_FRAMES;
+    // triangle wave: hi → lo → hi, periodic so the overlap frames line up
+    let v = lo + (hi - lo) * Math.abs(1 - 2 * t);
+    v = isSim ? +v.toFixed(2) : Math.round(v);
+    onSettingsChange((s) => {
+      if (isSim) return s.simThreshold === v ? s : { ...s, simThreshold: v };
+      return s.minSharedTags === v ? s : { ...s, minSharedTags: v };
+    });
+    rotateNodes(nodes, dTheta);
+    // keep-alive: autoPauseRedraw stops repainting once the engine settles
+    // (no-op while the render loop is already running)
+    fg.resumeAnimation?.();
 
-    const sp = new Map();
-    for (const [id, p] of pos) sp.set(id, screenAt(p, cos, sin));
+    await wait(GIF_DELAY); // the real simulation reacts and renders in here
 
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, outW, outH);
+    ctx.drawImage(src, 0, 0, outW, outH);
 
-    // links, strongest first (the list is sorted, so stop at the threshold)
-    let drawn = 0;
-    for (const l of candidates) {
-      if (l.value < threshold || ++drawn > GIF_MAX_LINKS) break;
-      const a = sp.get(l.source);
-      const b = sp.get(l.target);
-      if (
-        (a.x < 0 && b.x < 0) || (a.x > outW && b.x > outW) ||
-        (a.y < 0 && b.y < 0) || (a.y > outH && b.y > outH)
-      ) {
-        continue;
-      }
-      const v = normOf(l.value);
-      ctx.strokeStyle = `rgba(255,255,255,${(0.06 + 0.24 * v).toFixed(2)})`;
-      ctx.lineWidth = Math.max((0.5 + 2.5 * v) * outScale, 0.3);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-
-    for (const n of nodes) {
-      const p = sp.get(n.id);
-      if (!p || p.x < -10 || p.x > outW + 10 || p.y < -10 || p.y > outH + 10) continue;
-      const r = (radii.get(n.id) || 4) * k * outScale;
-      if (r < 0.2) continue;
-      ctx.fillStyle = n.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(r, 0.4), 0, 2 * Math.PI);
-      ctx.fill();
-    }
-
+    const k = fg.zoom();
     ctx.font = labelFont;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.lineJoin = 'round';
     for (const n of nodes) {
-      if (!labelIds.has(n.id)) continue;
-      const p = sp.get(n.id);
+      if (!labelIds.has(n.id) || n.x == null) continue;
+      const p = screenOf(n);
       const y = p.y + (radii.get(n.id) || 4) * k * outScale + 3;
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(10,10,15,0.9)';
@@ -325,8 +306,7 @@ async function renderGrowGif({ fg, nodes, radii, raw, settings, user, onProgress
       ctx.fillText(n.id, p.x, y);
     }
 
-    // legend + stamp reuse the screenshot helpers; 0.8 scales them down to
-    // fit the GIF's smaller resolution (every dimension multiplies by scale)
+    // legend + stamp; 0.8 scales the screenshot helper down to GIF resolution
     drawLegend(ctx, nodes, 0.8, outW / 0.8, outH / 0.8);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
@@ -339,19 +319,53 @@ async function renderGrowGif({ fg, nodes, radii, raw, settings, user, onProgress
     ctx.fillStyle = 'rgba(196, 181, 253, 0.95)';
     ctx.fillText('Constellation.fm', outW - 14, outH - 14);
 
-    const { data } = ctx.getImageData(0, 0, outW, outH);
+    frames.push(ctx.getImageData(0, 0, outW, outH));
+    onProgress?.(`Recording… ${f + 1} / ${total}`);
+  }
+
+  // put the slider back where the user had it
+  onSettingsChange((s) =>
+    isSim ? { ...s, simThreshold: startVal } : { ...s, minSharedTags: startVal }
+  );
+
+  // --- crossfade the overlap onto the loop start to hide the drift seam ---
+  // frame N follows frame N-1 seamlessly and matches frame 0's threshold and
+  // rotation, so blending continuation → original over the first few frames
+  // turns the position drift into a gentle morph.
+  for (let i = 0; i < GIF_OVERLAP; i++) {
+    const w = (i + 1) / (GIF_OVERLAP + 1); // weight of the original frame
+    const a = frames[i].data;
+    const b = frames[GIF_FRAMES + i].data;
+    for (let p = 0; p < a.length; p += 4) {
+      a[p] = a[p] * w + b[p] * (1 - w);
+      a[p + 1] = a[p + 1] * w + b[p + 1] * (1 - w);
+      a[p + 2] = a[p + 2] * w + b[p + 2] * (1 - w);
+    }
+  }
+
+  // --- encode (after recording, so quantizing can't stutter the physics) ---
+  const gif = GIFEncoder();
+  for (let f = 0; f < GIF_FRAMES; f++) {
+    const { data } = frames[f];
     const palette = quantize(data, 256);
     const index = applyPalette(data, palette);
     gif.writeFrame(index, outW, outH, { palette, delay: GIF_DELAY, repeat: 0 });
-
-    onProgress?.(`Rendering GIF… ${f + 1} / ${GIF_FRAMES}`);
-    await tick(); // let the progress pill repaint between frames
+    onProgress?.(`Encoding GIF… ${f + 1} / ${GIF_FRAMES}`);
+    await tick();
   }
   gif.finish();
   return new Blob([gif.bytes()], { type: 'image/gif' });
 }
 
-export default function ShareMenu({ user, fgRef, nodes, radii, raw, settings }) {
+export default function ShareMenu({
+  user,
+  fgRef,
+  nodes,
+  radii,
+  settings,
+  onSettingsChange,
+  onToggleGrow,
+}) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -435,14 +449,14 @@ export default function ShareMenu({ user, fgRef, nodes, radii, raw, settings }) 
     const fg = fgRef?.current;
     setOpen(false);
     setBusy(true);
-    fg?.pauseAnimation?.(); // free the CPU for encoding; resumed below
     try {
-      const blob = await renderGrowGif({
+      const blob = await recordGrowGif({
         fg,
         nodes,
         radii,
-        raw,
         settings,
+        onSettingsChange,
+        onToggleGrow,
         user,
         onProgress: progress,
       });
@@ -460,7 +474,6 @@ export default function ShareMenu({ user, fgRef, nodes, radii, raw, settings }) 
     } catch {
       flash('GIF export failed.');
     } finally {
-      fg?.resumeAnimation?.();
       setBusy(false);
     }
   };

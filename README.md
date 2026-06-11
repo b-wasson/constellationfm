@@ -46,10 +46,12 @@ linked to the artists Last.fm considers similar, and colored by genre.
   download it, copy it to the clipboard, send it through your device's share
   sheet, or open a pre-written post on X, Bluesky, Reddit, or Facebook to
   attach it to.
-- **Export a looping GIF** of the grow animation: the graph spins exactly
-  360° while connections sprout and recede back to the start, so the GIF
-  loops seamlessly. Rendered offline from a frozen layout — the live view
-  keeps its positions.
+- **Export a looping GIF** of the grow animation: the recorder plays one
+  full cycle for real — the link threshold sweeps down and back while the
+  graph turns exactly 360°, with the live physics reacting throughout — and
+  captures it straight off the canvas. A few extra frames are crossfaded
+  over the start so the leftover physics drift morphs smoothly instead of
+  jumping, making the GIF loop seamlessly.
 
 ### Data controls
 
