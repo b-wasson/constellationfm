@@ -121,6 +121,10 @@ function captureGraph({ user, fg, nodes, radii }) {
   out.width = src.width;
   out.height = src.height;
   const ctx = out.getContext('2d');
+  // the graph canvas is transparent (its dark background is CSS), so the
+  // export needs its own black backdrop or the PNG comes out see-through
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, out.width, out.height);
   ctx.drawImage(src, 0, 0);
 
   const scale = src.clientWidth ? src.width / src.clientWidth : 1;
