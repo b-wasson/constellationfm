@@ -65,12 +65,13 @@ export function createLastfm(getKey) {
     let data = null;
     let retryAfterSec = 0;
     try {
-      const res = await fetch(url);
+      // without a timeout, one stalled connection hangs its caller forever
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
       status = res.status;
       retryAfterSec = Number(res.headers.get('retry-after')) || 0;
       data = await res.json();
     } catch {
-      data = null; // network/parse hiccup — treat as retryable
+      data = null; // network hiccup, timeout, or bad JSON — treat as retryable
     }
 
     const rateLimited = status === 429 || data?.error === 29;

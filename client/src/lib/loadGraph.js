@@ -18,9 +18,12 @@ async function api(path, attempt = 0) {
 
   let res = null;
   try {
-    res = await fetch(path);
+    // generous timeout: the proxy may legitimately take a while when it's
+    // pacing or cooling down, but a request must never hang forever — that
+    // strands one pool worker and the load sticks at "one away from done"
+    res = await fetch(path, { signal: AbortSignal.timeout(90000) });
   } catch {
-    // network hiccup — retryable
+    // network hiccup or timeout — retryable
   }
   if (res?.ok) return res.json();
 
