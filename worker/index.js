@@ -67,9 +67,26 @@ export default {
       const name = (q.get('name') || '').trim();
       if (!name) return json({ error: 'Missing name parameter' }, 400);
 
+      // Edge cache → KV → Last.fm. KV is the layer that actually persists
+      // everywhere: it's global across colos and works on *.workers.dev,
+      // where the edge cache is a no-op. Artist info/similar barely changes,
+      // so a long TTL is safe; only successes are written.
       return cached(request, 86400, ctx, async (cc) => {
+        const kvKey = `artist:${name.toLowerCase()}`;
         try {
-          return json(await lf.getArtistData(name), 200, cc);
+          const hit = await env.CACHE.get(kvKey, 'json');
+          if (hit) return json(hit, 200, cc);
+        } catch {
+          // KV read failed — fall through to Last.fm rather than erroring
+        }
+        try {
+          const data = await lf.getArtistData(name);
+          ctx.waitUntil(
+            env.CACHE.put(kvKey, JSON.stringify(data), {
+              expirationTtl: 7 * 86400,
+            }).catch(() => {})
+          );
+          return json(data, 200, cc);
         } catch (err) {
           return errorResponse(err);
         }
