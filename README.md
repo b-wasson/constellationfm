@@ -5,6 +5,8 @@ username and your library becomes an interactive force-directed universe:
 every node is an artist you've listened to, sized by how much you play them,
 linked to the artists Last.fm considers similar, and colored by genre.
 
+**Live at [constellationfm.benwasson.com](https://constellationfm.benwasson.com)**
+
 ![A full library rendered as a graph — thousands of artists clustered by genre](docs/screenshot.png)
 
 ## Features
@@ -78,9 +80,11 @@ navigable:
 - Physics tuning scales with graph size: limited repulsion range, faster
   settling, heavier damping, and an early stop once motion is no longer
   visible.
-- Server-side caching: artist data is cached for 24 hours and assembled
-  graphs for 10 minutes, so repeat loads are near-instant and popular
-  artists are only ever fetched once.
+- Layered server-side caching: artist data is served from Cloudflare's
+  edge cache (24 h, per datacenter), then Workers KV (7 days, global), and
+  only then fetched from Last.fm — so repeat loads are near-instant and
+  popular artists are only ever fetched once, no matter who loads them or
+  from where. Top-artists pages are cached for 10 minutes.
 
 ## Getting started
 
@@ -125,23 +129,35 @@ npm start       # Express serves both the API and the built client on :3001
 
 The app ships with a Cloudflare Worker (`worker/index.js`) that serves the
 built client as static assets and proxies the same two API endpoints as the
-Express server, with Last.fm responses cached at the edge.
+Express server, with Last.fm responses cached at the edge and in Workers KV.
 
 ```bash
 npx wrangler login                      # once: connect your Cloudflare account
 npx wrangler secret put LASTFM_API_KEY  # once: store your API key
+npx wrangler kv namespace create CACHE  # once: create the artist-data cache
 npm run cf:deploy                       # build + deploy
 ```
 
-That's it — Wrangler prints your `*.workers.dev` URL. To preview locally
-first, copy `.dev.vars.example` to `.dev.vars`, fill in your key, and run
-`npm run cf:dev`.
+After creating the KV namespace, put its id in the `kv_namespaces` entry in
+`wrangler.jsonc`. To preview locally first, copy `.dev.vars.example` to
+`.dev.vars`, fill in your key, and run `npm run cf:dev`.
+
+> **Deploying your own fork?** `wrangler.jsonc` is set up for this app's
+> domain: it routes to `constellationfm.benwasson.com` and disables the
+> `*.workers.dev` URL. Swap the `routes` entry for your own domain, or
+> delete it and set `"workers_dev": true` to get a `*.workers.dev` URL.
 
 Notes:
 
-- On a free Workers plan everything works; attaching a **custom domain**
-  additionally enables Cloudflare's edge cache for Last.fm responses
-  (the Cache API is a no-op on `*.workers.dev`).
+- Everything works on a free Workers plan, including the caches. KV's free
+  tier allows 1,000 writes/day — a brand-new 1,000+ artist library can
+  exhaust that in one load, in which case writes silently skip and the
+  graph still builds (reads, at 100k/day, are effectively unlimited here).
+- Caching is layered: Cloudflare's HTTP edge cache serves repeat requests
+  per datacenter (this part works even on `*.workers.dev`, since the
+  responses carry `max-age`), KV persists artist data globally for 7 days,
+  and the in-worker Cache API adds a little extra on custom domains (it's
+  a no-op on `*.workers.dev`).
 - The architecture was shaped around Workers' subrequest limits: the browser
   orchestrates graph building and each Worker invocation makes at most a
   couple of Last.fm calls, so even "All artists" loads work on the free plan.
@@ -170,7 +186,8 @@ Notes:
 2. For each artist it fetches global stats + genre tags and similarity
    scores through the proxy, 8 requests in parallel, with retry/backoff
    when Last.fm rate limits. The proxy holds the API key and caches
-   responses (24 h per artist, 10 min per top-artists page).
+   responses (edge cache 24 h + Workers KV 7 days per artist, 10 min per
+   top-artists page).
 3. The client builds links between every pair of artists that are both in
    your library and appear in each other's similar-artists lists.
 4. The graph renders with
@@ -194,8 +211,8 @@ lastfm-graph/
 │   ├── index.js       # /api/top-artists, /api/artist-data
 │   └── .env           # LASTFM_API_KEY (not committed)
 ├── worker/
-│   └── index.js       # Cloudflare Worker: same endpoints + edge cache
-├── wrangler.jsonc     # Cloudflare config (assets + worker)
+│   └── index.js       # Cloudflare Worker: same endpoints + edge/KV caches
+├── wrangler.jsonc     # Cloudflare config (assets, KV cache, custom domain)
 ├── client/            # Vite + React frontend
 │   └── src/
 │       ├── App.jsx               # graph rendering, LOD, culling, state
@@ -239,4 +256,5 @@ lastfm-graph/
 | Graph    | force-graph / react-force-graph-2d (canvas)       |
 | Backend  | Express (dev/self-host) or Cloudflare Worker      |
 | Data     | Last.fm API (top artists, artist info, similar)   |
+| Caching  | Cloudflare edge cache + Workers KV                |
 | Hosting  | Cloudflare Workers + static assets (`cf:deploy`)  |
