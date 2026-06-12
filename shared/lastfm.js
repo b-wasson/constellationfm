@@ -55,7 +55,7 @@ export function createLastfm(getKey) {
     nextSlot = Math.max(Date.now(), nextSlot) + MIN_INTERVAL_MS;
   }
 
-  async function lastfm(params, attempt = 0) {
+  async function lastfm(params, attempt = 0, maxRetries = MAX_RETRIES) {
     await pace();
 
     const url = new URL(BASE);
@@ -78,7 +78,7 @@ export function createLastfm(getKey) {
     const retryable = !data || status >= 500 || RETRYABLE_CODES.has(data?.error);
 
     if (rateLimited || retryable) {
-      if (attempt >= MAX_RETRIES) {
+      if (attempt >= maxRetries) {
         const err = new Error(
           rateLimited
             ? 'Last.fm is rate limiting us — wait a minute and try again.'
@@ -97,15 +97,16 @@ export function createLastfm(getKey) {
       }
       let backoff = Math.min(1000 * 2 ** attempt, 15000);
       if (rateLimited) {
-        // honor Retry-After when Last.fm sends one, never cool down less
+        // honor Retry-After when Last.fm sends one (capped — a bogus header
+        // must not put a worker to sleep for hours), never cool down less
         // than the escalating schedule, and brake every in-flight request
         const cooldown =
           RATE_LIMIT_COOLDOWNS_MS[Math.min(attempt, RATE_LIMIT_COOLDOWNS_MS.length - 1)];
-        backoff = Math.max(backoff, cooldown, retryAfterSec * 1000);
+        backoff = Math.max(backoff, cooldown, Math.min(retryAfterSec * 1000, 60000));
         throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
       }
       await sleep(backoff);
-      return lastfm(params, attempt + 1);
+      return lastfm(params, attempt + 1, maxRetries);
     }
 
     if (data.error) {
@@ -137,22 +138,37 @@ export function createLastfm(getKey) {
     return result;
   }
 
+  // Per-artist calls get a small retry budget: the client retries the whole
+  // request anyway, so deep ladders here only multiply (client retries ×
+  // server retries kept a load wedged on one bad artist for ~10 minutes).
+  const ARTIST_MAX_RETRIES = 1;
+
   // global stats + tags + similar artists for one artist
   async function getArtistData(name) {
     const key = name.toLowerCase();
     const cached = artistCache.get(key);
     if (cached) return cached;
 
-    const [info, similar] = await Promise.all([
-      lastfm({ method: 'artist.getinfo', artist: name, autocorrect: 1 }).catch(() => null),
-      lastfm({ method: 'artist.getsimilar', artist: name, autocorrect: 1, limit: 250 }).catch(() => null),
+    const grab = (p) => p.then((value) => [value, null], (err) => [null, err]);
+    const [[info, infoErr], [similar, similarErr]] = await Promise.all([
+      grab(lastfm({ method: 'artist.getinfo', artist: name, autocorrect: 1 }, 0, ARTIST_MAX_RETRIES)),
+      grab(lastfm({ method: 'artist.getsimilar', artist: name, autocorrect: 1, limit: 250 }, 0, ARTIST_MAX_RETRIES)),
     ]);
 
-    // total failure (rate limiting, most likely) — don't cache the junk result
+    // total failure — don't cache the junk result. Only call it a rate limit
+    // when it actually was one: a 429 makes the client cool down hard and
+    // brake all in-flight requests, which is wrong for a merely broken artist.
     if (!info && !similar) {
-      const err = new Error(`Couldn't load data for ${name}`);
-      err.rateLimited = true;
-      err.retryAfterSec = Math.max(30, Math.ceil((throttleUntil - Date.now()) / 1000));
+      const rateLimited = Boolean(infoErr?.rateLimited || similarErr?.rateLimited);
+      const err = new Error(
+        rateLimited
+          ? 'Last.fm is rate limiting us — wait a minute and try again.'
+          : `Couldn't load data for ${name}`
+      );
+      err.rateLimited = rateLimited;
+      if (rateLimited) {
+        err.retryAfterSec = Math.max(30, Math.ceil((throttleUntil - Date.now()) / 1000));
+      }
       throw err;
     }
 

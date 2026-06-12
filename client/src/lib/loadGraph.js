@@ -6,29 +6,28 @@
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const MAX_RETRIES = 5;
 // when rate limited, cool down hard and escalate — hammering a limited API
 // is how keys get banned
 const RATE_LIMIT_COOLDOWNS_MS = [5000, 10000, 20000, 40000, 60000];
+const MAX_BACKOFF_MS = 60000; // cap every wait, even a server-sent Retry-After
 let throttleUntil = 0; // shared brake across all in-flight requests
 
-async function api(path, attempt = 0) {
+async function api(path, { timeoutMs = 90000, retries = 5 } = {}, attempt = 0) {
   const holdoff = throttleUntil - Date.now();
-  if (holdoff > 0) await sleep(holdoff);
+  if (holdoff > 0) await sleep(Math.min(holdoff, MAX_BACKOFF_MS));
 
   let res = null;
   try {
-    // generous timeout: the proxy may legitimately take a while when it's
-    // pacing or cooling down, but a request must never hang forever — that
-    // strands one pool worker and the load sticks at "one away from done"
-    res = await fetch(path, { signal: AbortSignal.timeout(90000) });
+    // a request must never hang forever — that strands one pool worker and
+    // the load sticks at "one away from done"
+    res = await fetch(path, { signal: AbortSignal.timeout(timeoutMs) });
   } catch {
     // network hiccup or timeout — retryable
   }
   if (res?.ok) return res.json();
 
   const retryable = !res || res.status === 429 || res.status >= 500;
-  if (retryable && attempt < MAX_RETRIES) {
+  if (retryable && attempt < retries) {
     let backoff = Math.min(1000 * 2 ** attempt, 15000);
     if (res?.status === 429) {
       // honor the server's Retry-After, never wait less than the schedule,
@@ -36,11 +35,11 @@ async function api(path, attempt = 0) {
       const retryAfter = (Number(res.headers.get('retry-after')) || 0) * 1000;
       const cooldown =
         RATE_LIMIT_COOLDOWNS_MS[Math.min(attempt, RATE_LIMIT_COOLDOWNS_MS.length - 1)];
-      backoff = Math.max(backoff, cooldown, retryAfter);
+      backoff = Math.min(Math.max(backoff, cooldown, retryAfter), MAX_BACKOFF_MS);
       throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
     }
     await sleep(backoff);
-    return api(path, attempt + 1);
+    return api(path, { timeoutMs, retries }, attempt + 1);
   }
 
   let message = 'Something went wrong talking to the server.';
@@ -98,7 +97,14 @@ export async function loadGraph({ username, period, limit }, onProgress = () => 
   const details = await mapPool(artists, 8, async (a) => {
     let d;
     try {
-      d = await api(`/api/artist-data?${new URLSearchParams({ name: a.name })}`);
+      // tight budget: details are optional decoration, and with a warm cache
+      // a single broken artist is the only thing on screen — at the default
+      // budget it kept the load wedged at "one away from done" for ~10
+      // minutes. ~1 minute worst case, then it's marked failed and warned.
+      d = await api(`/api/artist-data?${new URLSearchParams({ name: a.name })}`, {
+        timeoutMs: 30000,
+        retries: 2,
+      });
     } catch {
       failedArtists++;
       d = { listeners: 0, globalPlaycount: 0, tags: [], similar: [] };
