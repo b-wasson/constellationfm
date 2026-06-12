@@ -67,10 +67,11 @@ export default {
       const name = (q.get('name') || '').trim();
       if (!name) return json({ error: 'Missing name parameter' }, 400);
 
-      // Edge cache → KV → Last.fm. KV is the layer that actually persists
-      // everywhere: it's global across colos and works on *.workers.dev,
-      // where the edge cache is a no-op. Artist info/similar barely changes,
-      // so a long TTL is safe; only successes are written.
+      // Edge cache → KV → Last.fm. Cloudflare's front-line HTTP cache does
+      // serve these responses (they carry max-age) even on *.workers.dev,
+      // but it's per-colo and capped at 24h; KV is global and holds entries
+      // for 7 days. Artist info/similar barely changes, so the long TTL is
+      // safe; only successes are written.
       return cached(request, 86400, ctx, async (cc) => {
         const kvKey = `artist:${name.toLowerCase()}`;
         try {
