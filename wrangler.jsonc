@@ -6,7 +6,7 @@
   "routes": [
     { "pattern": "constellationfm.benwasson.com", "custom_domain": true }
   ],
-  "workers_dev": true,
+  "workers_dev": false,
   "kv_namespaces": [
     { "binding": "CACHE", "id": "aabef4dd7f8d42a0b840048aa76393f7" }
   ],
