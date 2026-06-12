@@ -68,7 +68,9 @@ async function mapPool(items, limit, fn) {
 
 export async function loadGraph({ username, period, limit }, onProgress = () => {}) {
   const wantAll = limit === 'all';
-  const perPage = wantAll ? 1000 : limit;
+  // Last.fm serves at most 1000 artists per page, so bigger limits page
+  // through the library just like 'all' does
+  const perPage = wantAll ? 1000 : Math.min(limit, 1000);
 
   // 1. top artists ('all' pages through the entire library)
   const artists = [];
@@ -81,10 +83,13 @@ export async function loadGraph({ username, period, limit }, onProgress = () => 
     );
     artists.push(...top.artists);
     userName = top.user || username;
-    totalPages = wantAll ? top.totalPages : 1;
+    totalPages = wantAll
+      ? top.totalPages
+      : Math.min(Math.ceil(limit / perPage), top.totalPages);
     onProgress({ phase: 'top', page, totalPages, artists: artists.length });
     page++;
   } while (page <= totalPages);
+  if (!wantAll && artists.length > limit) artists.length = limit;
 
   if (artists.length === 0) {
     throw new Error(`No listening data found for "${username}" in this period.`);
