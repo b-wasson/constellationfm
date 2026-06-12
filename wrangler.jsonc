@@ -3,6 +3,10 @@
   "name": "constellation-fm",
   "main": "worker/index.js",
   "compatibility_date": "2025-08-01",
+  "routes": [
+    { "pattern": "constellationfm.benwasson.com", "custom_domain": true }
+  ],
+  "workers_dev": true,
   "kv_namespaces": [
     { "binding": "CACHE", "id": "aabef4dd7f8d42a0b840048aa76393f7" }
   ],
