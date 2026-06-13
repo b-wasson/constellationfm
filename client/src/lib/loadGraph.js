@@ -30,14 +30,16 @@ async function api(path, { timeoutMs = 90000, retries = 5 } = {}, attempt = 0) {
   if (retryable && attempt < retries) {
     let backoff = Math.min(1000 * 2 ** attempt, 15000);
     if (res?.status === 429) {
-      // honor the server's Retry-After, never wait less than the schedule,
-      // and brake every in-flight request, not just this one
+      // honor the server's Retry-After, never wait less than the schedule
       const retryAfter = (Number(res.headers.get('retry-after')) || 0) * 1000;
       const cooldown =
         RATE_LIMIT_COOLDOWNS_MS[Math.min(attempt, RATE_LIMIT_COOLDOWNS_MS.length - 1)];
       backoff = Math.min(Math.max(backoff, cooldown, retryAfter), MAX_BACKOFF_MS);
-      throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
     }
+    // brake every in-flight request, not just this one — a 5xx/timeout means
+    // the backend is already struggling, so other pool workers retrying into
+    // it immediately only piles on
+    throttleUntil = Math.max(throttleUntil, Date.now() + backoff);
     await sleep(backoff);
     return api(path, { timeoutMs, retries }, attempt + 1);
   }

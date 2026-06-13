@@ -56,6 +56,20 @@ export function createLastfm(getKey) {
   }
 
   async function lastfm(params, attempt = 0, maxRetries = MAX_RETRIES) {
+    // if we're already mid-cooldown from a previous rate limit, don't let
+    // this invocation block in pace() for up to a minute — Cloudflare's
+    // gateway times that out into an uncontrolled 504, and the client
+    // retries straight into the same overloaded backend. Fail fast with the
+    // same rate-limited error instead, so the client's 429 handling (which
+    // brakes all in-flight requests) kicks in immediately.
+    const cooldown = throttleUntil - Date.now();
+    if (cooldown > 3000) {
+      const err = new Error('Last.fm is rate limiting us — wait a minute and try again.');
+      err.rateLimited = true;
+      err.retryAfterSec = Math.max(30, Math.ceil(cooldown / 1000));
+      throw err;
+    }
+
     await pace();
 
     const url = new URL(BASE);
