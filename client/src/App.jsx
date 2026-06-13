@@ -507,24 +507,26 @@ export default function App() {
             onToggleFreeze={toggleFrozen}
           />
 
-          <div className="left-column">
-            {!searchHidden && (
-              <SearchPanel
-                artistNames={visibleNodes.map((n) => n.id)}
-                onSearch={focusArtist}
-              />
-            )}
-            {selected && (
-              <DetailsPanel
-                node={selected}
-                connections={degree.get(selected.id) || 0}
-                onClose={() => setSelected(null)}
-              />
-            )}
-          </div>
-
           <Legend nodes={visibleNodes} />
         </>
+      )}
+
+      {raw && (!searchHidden || (selected && !uiHidden)) && (
+        <div className="left-column">
+          {!searchHidden && (
+            <SearchPanel
+              artistNames={visibleNodes.map((n) => n.id)}
+              onSearch={focusArtist}
+            />
+          )}
+          {selected && !uiHidden && (
+            <DetailsPanel
+              node={selected}
+              connections={degree.get(selected.id) || 0}
+              onClose={() => setSelected(null)}
+            />
+          )}
+        </div>
       )}
 
       {raw && (
@@ -536,15 +538,13 @@ export default function App() {
           >
             {uiHidden ? 'Show menus' : 'Hide menus'}
           </button>
-          {!uiHidden && (
-            <button
-              type="button"
-              className="ui-toggle"
-              onClick={() => setSearchHidden((h) => !h)}
-            >
-              {searchHidden ? 'Show search' : 'Hide search'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="ui-toggle"
+            onClick={() => setSearchHidden((h) => !h)}
+          >
+            {searchHidden ? 'Show search' : 'Hide search'}
+          </button>
           <ShareMenu
             user={raw.user}
             fgRef={fgRef}
