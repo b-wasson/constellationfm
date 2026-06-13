@@ -45,6 +45,7 @@ export default function App() {
   const [frozen, setFrozen] = useState(false);
   // phones: start with the panels tucked away so the graph gets the screen
   const [uiHidden, setUiHidden] = useState(() => window.innerWidth < 640);
+  const [searchHidden, setSearchHidden] = useState(false);
 
   // "Grow" mode: glide the active link threshold down and back up in fine
   // 0.01 steps, so connections sprout and recede fluidly. Starts from the
@@ -507,10 +508,12 @@ export default function App() {
           />
 
           <div className="left-column">
-            <SearchPanel
-              artistNames={visibleNodes.map((n) => n.id)}
-              onSearch={focusArtist}
-            />
+            {!searchHidden && (
+              <SearchPanel
+                artistNames={visibleNodes.map((n) => n.id)}
+                onSearch={focusArtist}
+              />
+            )}
             {selected && (
               <DetailsPanel
                 node={selected}
@@ -533,6 +536,15 @@ export default function App() {
           >
             {uiHidden ? 'Show menus' : 'Hide menus'}
           </button>
+          {!uiHidden && (
+            <button
+              type="button"
+              className="ui-toggle"
+              onClick={() => setSearchHidden((h) => !h)}
+            >
+              {searchHidden ? 'Show search' : 'Hide search'}
+            </button>
+          )}
           <ShareMenu
             user={raw.user}
             fgRef={fgRef}
