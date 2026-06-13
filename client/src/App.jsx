@@ -486,8 +486,9 @@ export default function App() {
         cooldownTime={big ? 10000 : 6000}
         d3AlphaDecay={big ? 0.05 : 0.0228}
         // big graphs: heavy damping + early stop so the physics loop ends
-        // as soon as movement stops being visible
-        d3VelocityDecay={big ? 0.6 : 0.4}
+        // as soon as movement stops being visible. Smaller graphs get a
+        // touch of extra friction too, so dragging nodes feels less floaty.
+        d3VelocityDecay={big ? 0.6 : 0.5}
         d3AlphaMin={big ? 0.01 : 0}
       />
 
