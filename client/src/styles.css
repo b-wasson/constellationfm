@@ -311,6 +311,7 @@ button[type='submit']:disabled {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
 }
 
