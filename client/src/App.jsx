@@ -42,6 +42,7 @@ export default function App() {
   const [hoverNode, setHoverNode] = useState(null);
   const [selected, setSelected] = useState(null);
   const [growing, setGrowing] = useState(false);
+  const [frozen, setFrozen] = useState(false);
   // phones: start with the panels tucked away so the graph gets the screen
   const [uiHidden, setUiHidden] = useState(() => window.innerWidth < 640);
 
@@ -85,6 +86,7 @@ export default function App() {
     setSelected(null);
     setHoverNode(null);
     setGrowing(false);
+    setFrozen(false);
 
     try {
       const payload = await loadGraph({ username, period, limit }, setProgress);
@@ -158,6 +160,26 @@ export default function App() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [growing, nodes, selected]);
+
+  // pin/unpin every node's current position so the force simulation
+  // (and dragging) can no longer move them around
+  const toggleFrozen = useCallback(() => {
+    setFrozen((f) => {
+      const next = !f;
+      for (const n of nodes) {
+        if (next) {
+          if (n.x != null) {
+            n.fx = n.x;
+            n.fy = n.y;
+          }
+        } else {
+          delete n.fx;
+          delete n.fy;
+        }
+      }
+      return next;
+    });
+  }, [nodes]);
 
   const links = useMemo(() => {
     if (!raw) return [];
@@ -456,7 +478,7 @@ export default function App() {
         }
         onBackgroundClick={() => setSelected(null)}
         // dragging a node reheats the whole simulation — too heavy on huge graphs
-        enableNodeDrag={nodes.length <= 1000}
+        enableNodeDrag={!frozen && nodes.length <= 1000}
         // keep the render loop alive while grow mode spins the graph
         autoPauseRedraw={!growing}
         warmupTicks={big ? 20 : 60}
@@ -480,6 +502,8 @@ export default function App() {
             user={raw.user}
             growing={growing}
             onToggleGrow={setGrowing}
+            frozen={frozen}
+            onToggleFreeze={toggleFrozen}
           />
 
           <div className="left-column">

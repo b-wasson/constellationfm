@@ -17,6 +17,8 @@ export default function Controls({
   user,
   growing,
   onToggleGrow,
+  frozen,
+  onToggleFreeze,
 }) {
   const set = (key, value) => onSettingsChange({ ...settings, [key]: value });
 
@@ -115,6 +117,14 @@ export default function Controls({
         {settings.hideUnconnected
           ? 'Show unconnected artists'
           : 'Hide unconnected artists'}
+      </button>
+
+      <button
+        type="button"
+        className={`toggle-btn${frozen ? ' active' : ''}`}
+        onClick={onToggleFreeze}
+      >
+        {frozen ? '🔓 Unlock layout' : '🔒 Lock layout'}
       </button>
     </div>
   );
