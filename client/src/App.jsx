@@ -484,7 +484,7 @@ export default function App() {
         autoPauseRedraw={!growing}
         warmupTicks={big ? 20 : 60}
         cooldownTime={big ? 10000 : 6000}
-        d3AlphaDecay={big ? 0.05 : 0.0228}
+        d3AlphaDecay={big ? 0.05 : 0.04}
         // big graphs: heavy damping + early stop so the physics loop ends
         // as soon as movement stops being visible. Smaller graphs get a
         // touch of extra friction too, so dragging nodes feels less floaty.
