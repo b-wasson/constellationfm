@@ -569,3 +569,32 @@ button[type='submit']:disabled {
     max-width: calc(100vw - 24px);
   }
 }
+
+/* ---------- short viewports (landscape phones, squat windows) ---------- */
+/* the controls/legend panels normally fill the viewport height, which on
+   short screens runs them into the bottom bar — pull in and drop the legend */
+@media (min-width: 641px) and (max-height: 620px) {
+  .legend {
+    display: none;
+  }
+
+  .controls,
+  .left-column {
+    max-height: calc(100vh - 32px - 56px);
+    max-height: calc(100dvh - 32px - 56px);
+  }
+}
+
+/* narrow AND short (small phones in landscape): the mobile top/bottom
+   sheets need to shrink further so they don't overlap each other */
+@media (max-width: 640px) and (max-height: 500px) {
+  .controls {
+    max-height: 50vh;
+    max-height: 50dvh;
+  }
+
+  .left-column {
+    max-height: 28vh;
+    max-height: 28dvh;
+  }
+}
