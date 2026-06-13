@@ -524,8 +524,8 @@ button[type='submit']:disabled {
     left: 12px;
     right: 12px;
     width: auto;
-    max-height: 46vh;
-    max-height: 46dvh;
+    max-height: 60vh;
+    max-height: 60dvh;
   }
 
   /* search + details become a bottom sheet above the button bar */
