@@ -9,6 +9,7 @@ import DetailsPanel from './components/DetailsPanel';
 import Legend from './components/Legend';
 import { genreOf } from './colors';
 import { loadGraph } from './lib/loadGraph';
+import demoData from './demoData.json';
 
 const idOf = (end) => (typeof end === 'object' ? end.id : end);
 
@@ -105,6 +106,23 @@ export default function App() {
     const limit = form.limit === MAX_LIMIT ? 'all' : form.limit;
     load(form.username.trim(), form.period, limit);
   }, [form, load]);
+
+  // No-account demo: drop a pre-built real graph straight in, no network or
+  // Last.fm rate limits. The form mirrors the demo so "Reload graph" rebuilds
+  // it live, and a fresh deep-copy is used so each load starts from clean
+  // node objects (the force layout mutates them in place).
+  const loadDemo = useCallback(() => {
+    setLoading(false);
+    setProgress(null);
+    setError(null);
+    setNotice(null);
+    setSelected(null);
+    setHoverNode(null);
+    setGrowing(false);
+    setFrozen(false);
+    setForm({ username: demoData.user, period: demoData.period, limit: demoData.nodes.length });
+    setRaw(JSON.parse(JSON.stringify(demoData)));
+  }, []);
 
   // Nodes only depend on the fetched data so the force layout
   // survives display-setting changes without resetting positions.
@@ -563,6 +581,7 @@ export default function App() {
           form={form}
           onChange={setForm}
           onSubmit={submitLoad}
+          onDemo={loadDemo}
           loading={loading}
         />
       )}
