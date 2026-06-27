@@ -7,6 +7,10 @@ linked to the artists Last.fm considers similar, and colored by genre.
 
 **Live at [constellationfm.benwasson.com](https://constellationfm.benwasson.com)**
 
+No Last.fm account? Hit **✦ Explore a demo graph** on the start screen for a
+pre-built 100-artist constellation that loads instantly — no sign-in, no
+network call — so you can poke around before building your own.
+
 ![A full library rendered as a graph — thousands of artists clustered by genre](docs/screenshot.png)
 
 ## Features
@@ -37,12 +41,17 @@ linked to the artists Last.fm considers similar, and colored by genre.
   everything else — just like Obsidian's graph view.
 - **Click** an artist for a details panel: your scrobbles, global listeners
   and plays, connection count, genre tags, and a link to their Last.fm page.
-- **Search** the graph by artist name and the camera flies to the match.
+- **Search** the graph by artist name and the camera flies to the match; the
+  search panel can be tucked away on its own ("Hide search") independently of
+  the rest of the UI.
 - **Hide unconnected artists** with one button to trim isolated nodes (it
   respects your current link settings, and toggling back restores them in
   place).
 - **Drag, pan, and zoom** freely. Dragging is disabled above 1,000 artists,
   where it would bog down the physics.
+- **Lock layout** pins every node at its current position and freezes the
+  physics, so you can pan, zoom, and share a settled graph without it drifting
+  (and unlock to let it move again).
 - **Share your graph** as an image: the Share button screenshots the current
   view (stamped with your username and Constellation.fm), then lets you
   download it, copy it to the clipboard, send it through your device's share
@@ -58,8 +67,12 @@ linked to the artists Last.fm considers similar, and colored by genre.
 ### Data controls
 
 - **Time period**: last 7 days, 1/3/6/12 months, or all time.
-- **Artist count**: 20 up to your entire library ("All"). Counts above 200
-  show a heads-up that the first load takes a while.
+- **Artist count**: a logarithmic slider from 20 up to 10,000, with the
+  rightmost stop meaning your entire library. Equal drag covers 20→200 and
+  1000→10000, so small graphs stay easy to dial in while huge ones are still
+  reachable; values snap to friendly increments. Counts above 1,000 page
+  through the library the same way "All" does. Big counts show a heads-up that
+  the first load takes a while.
 - **Live progress bar** while loading — the app pages through your library
   and fetches artist details right from the browser, so you can watch it
   work in real time.
@@ -218,8 +231,12 @@ lastfm-graph/
 │       ├── App.jsx               # graph rendering, LOD, culling, state
 │       ├── lib/loadGraph.js      # client-side graph orchestration
 │       ├── colors.js             # genre → color mapping
+│       ├── demoData.json         # pre-built graph for the demo button
 │       └── components/
-│           ├── Controls.jsx      # username, sliders, dropdowns, search
+│           ├── StartScreen.jsx   # landing screen + demo button
+│           ├── GraphForm.jsx     # username, period, artist-count inputs
+│           ├── Controls.jsx      # display settings, sliders, dropdowns
+│           ├── SearchPanel.jsx   # artist search box
 │           ├── DetailsPanel.jsx  # artist info on click
 │           ├── ShareMenu.jsx     # screenshots + looping GIF export
 │           └── Legend.jsx        # genre color legend
